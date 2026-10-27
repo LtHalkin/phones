@@ -21,6 +21,8 @@
   .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
   .stat .l{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   .stat .v{font-size:1.4rem;font-weight:700;margin-top:4px}
+  .stat.cash{border-color:var(--accent)}
+  .stat input{margin-top:4px;padding:6px 8px;font-size:1.1rem;font-weight:700}
   form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
   label{display:flex;flex-direction:column;font-size:.8rem;color:var(--muted);gap:4px}
   input,select{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:1rem;width:100%}
@@ -48,7 +50,14 @@
 <div class="wrap">
   <h1>📱 iPhone Flip Tracker</h1>
 
-  <div class="stats" id="stats"></div>
+  <div class="stats">
+    <span id="cashStat" style="display:contents"></span>
+    <div class="stat">
+      <div class="l">Starting cash (€)</div>
+      <input type="number" step="0.01" id="startCash" placeholder="0">
+    </div>
+    <span id="stats" style="display:contents"></span>
+  </div>
 
   <div class="card">
     <h3 id="formTitle" style="margin-top:0">Add an iPhone</h3>
@@ -132,10 +141,13 @@
 
 <script>
 const KEY = "iphone-flip-tracker-v1";
+const CASH_KEY = "iphone-flip-tracker-startcash";
 const MODELS = ["iPhone 11","iPhone 11 Pro","iPhone 11 Pro Max","iPhone 12 mini","iPhone 12","iPhone 12 Pro","iPhone 12 Pro Max","iPhone 13 mini","iPhone 13","iPhone 13 Pro","iPhone 13 Pro Max","iPhone 14","iPhone 14 Plus","iPhone 14 Pro","iPhone 14 Pro Max","iPhone 15","iPhone 15 Plus","iPhone 15 Pro","iPhone 15 Pro Max","iPhone 16","iPhone 16 Plus","iPhone 16 Pro","iPhone 16 Pro Max","iPhone SE (2nd gen)","iPhone SE (3rd gen)","iPhone XR","iPhone XS","iPhone XS Max"];
 
 let items = [];
 try { items = JSON.parse(localStorage.getItem(KEY)) || []; } catch(e){ items = []; }
+let startCash = 0;
+try { startCash = parseFloat(localStorage.getItem(CASH_KEY)) || 0; } catch(e){ startCash = 0; }
 let editId = null, sortKey = "date", sortDir = -1;
 
 const $ = id => document.getElementById(id);
@@ -144,6 +156,12 @@ const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(items)); }cat
 
 $("models").innerHTML = MODELS.map(m => `<option value="${m}">`).join("");
 $("dateBought").valueAsDate = new Date();
+$("startCash").value = startCash || "";
+$("startCash").addEventListener("input", () => {
+  startCash = parseFloat($("startCash").value) || 0;
+  try{ localStorage.setItem(CASH_KEY, String(startCash)); }catch(e){}
+  render();
+});
 
 function daysBetween(a,b){
   if(!a||!b) return null;
@@ -256,6 +274,13 @@ function render(){
   const avgDays = soldList.length ? soldList.reduce((s,i)=>s+i.days,0)/soldList.length : null;
   const inStockValue = all.filter(i=>!i.sold).reduce((s,i)=>s+i.buyPrice,0);
 
+  // Cash on hand = starting cash + money received from sales - everything spent on phones & extra costs
+  const received = soldList.reduce((s,i)=>s+i.soldPrice,0);
+  const totalOut = all.reduce((s,i)=>s+(i.buyPrice||0)+(i.extra||0),0);
+  const cash = startCash + received - totalOut;
+
+  $("cashStat").innerHTML = `<div class="stat cash"><div class="l">Cash on hand</div><div class="v ${cash>=0?'pos':'neg'}">${eur(cash)}</div></div>`;
+
   $("stats").innerHTML = [
     ["Total profit", eur(profit), profit>=0?"pos":"neg"],
     ["Phones sold", soldList.length, ""],
@@ -280,7 +305,7 @@ function download(name, text, type){
   a.href = URL.createObjectURL(new Blob([text],{type}));
   a.download = name; a.click();
 }
-$("exportJson").onclick = () => download("iphone-flips-backup.json", JSON.stringify(items,null,2), "application/json");
+$("exportJson").onclick = () => download("iphone-flips-backup.json", JSON.stringify({startCash, items},null,2), "application/json");
 $("exportCsv").onclick = () => {
   const head = ["Model","Storage","Condition","Bought from","Date bought","Paid","Extra costs","List price","Sold where","Date sold","Sold for","Days to sell","Profit"];
   const lines = items.map(i => { const c = calc(i);
@@ -296,8 +321,18 @@ $("importFile").onchange = e => {
   r.onload = () => {
     try{
       const d = JSON.parse(r.result);
-      if(!Array.isArray(d)) throw 0;
-      if(confirm("Replace current data with the imported file?")){ items = d; save(); render(); }
+      // supports new backups ({startCash, items}) and old ones (plain array)
+      const list = Array.isArray(d) ? d : d.items;
+      if(!Array.isArray(list)) throw 0;
+      if(confirm("Replace current data with the imported file?")){
+        items = list;
+        if(!Array.isArray(d) && d.startCash !== undefined){
+          startCash = parseFloat(d.startCash) || 0;
+          $("startCash").value = startCash || "";
+          try{ localStorage.setItem(CASH_KEY, String(startCash)); }catch(e){}
+        }
+        save(); render();
+      }
     }catch(err){ alert("That file doesn't look like a valid backup."); }
   };
   r.readAsText(f); e.target.value = "";

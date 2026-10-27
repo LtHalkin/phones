@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone Flip Tracker</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --text:#1c1c1e; --muted:#6b7280; --line:#e5e7eb;
+    --accent:#0a84ff; --good:#16a34a; --bad:#dc2626; --warn:#d97706;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0f1115; --card:#1a1d24; --text:#f2f2f7; --muted:#9ca3af; --line:#2a2e38; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);padding:16px}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{margin:8px 0 16px;font-size:1.6rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .stat .l{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .stat .v{font-size:1.4rem;font-weight:700;margin-top:4px}
+  form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  label{display:flex;flex-direction:column;font-size:.8rem;color:var(--muted);gap:4px}
+  input,select{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:1rem;width:100%}
+  input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent}
+  .actions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+  button{padding:10px 16px;border:0;border-radius:10px;font-size:.95rem;cursor:pointer;background:var(--accent);color:#fff;font-weight:600}
+  button.sec{background:var(--line);color:var(--text)}
+  button.sm{padding:5px 10px;font-size:.8rem}
+  button.del{background:var(--bad)}
+  .preview{grid-column:1/-1;font-size:.9rem;color:var(--muted)}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}
+  th,td{padding:10px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:.72rem;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;cursor:pointer;user-select:none}
+  .pos{color:var(--good);font-weight:600}.neg{color:var(--bad);font-weight:600}
+  .tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.72rem;font-weight:600}
+  .tag.sold{background:rgba(22,163,74,.15);color:var(--good)}
+  .tag.stock{background:rgba(217,119,6,.15);color:var(--warn)}
+  .empty{text-align:center;color:var(--muted);padding:24px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .row input{max-width:240px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📱 iPhone Flip Tracker</h1>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card">
+    <h3 id="formTitle" style="margin-top:0">Add an iPhone</h3>
+    <form id="form">
+      <label>iPhone model
+        <input list="models" id="model" placeholder="e.g. iPhone 14 Pro" required>
+        <datalist id="models"></datalist>
+      </label>
+      <label>Storage
+        <select id="storage">
+          <option>64GB</option><option>128GB</option><option selected>256GB</option>
+          <option>512GB</option><option>1TB</option><option>Other</option>
+        </select>
+      </label>
+      <label>Condition
+        <select id="condition">
+          <option>New</option><option>Excellent</option><option selected>Good</option>
+          <option>Fair</option><option>Cracked / Faulty</option>
+        </select>
+      </label>
+      <label>Where I bought it
+        <input id="source" placeholder="e.g. Facebook Marketplace, DoneDeal" required>
+      </label>
+      <label>Date bought
+        <input type="date" id="dateBought" required>
+      </label>
+      <label>Bought for (€)
+        <input type="number" step="0.01" min="0" id="buyPrice" required>
+      </label>
+      <label>List price (€)
+        <input type="number" step="0.01" min="0" id="listPrice">
+      </label>
+      <label>Where I sold it
+        <input id="soldWhere" placeholder="Leave blank if unsold">
+      </label>
+      <label>Date sold
+        <input type="date" id="dateSold">
+      </label>
+      <label>Sold for (€)
+        <input type="number" step="0.01" min="0" id="soldPrice">
+      </label>
+      <label>Extra costs (€) <span style="font-weight:400">(repairs, postage, fees)</span>
+        <input type="number" step="0.01" min="0" id="extra" value="0">
+      </label>
+      <div class="preview" id="preview"></div>
+      <div class="actions">
+        <button type="submit" id="saveBtn">Save phone</button>
+        <button type="button" class="sec" id="cancelBtn" style="display:none">Cancel edit</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="search" placeholder="Search model, source…">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="sec sm" id="exportCsv">Export CSV</button>
+        <button class="sec sm" id="exportJson">Backup JSON</button>
+        <button class="sec sm" id="importBtn">Import JSON</button>
+        <input type="file" id="importFile" accept=".json" style="display:none">
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th data-k="model">Phone</th>
+          <th data-k="source">Bought at</th>
+          <th data-k="buyPrice">Paid</th>
+          <th data-k="listPrice">Listed</th>
+          <th data-k="soldPrice">Sold for</th>
+          <th data-k="days">Days to sell</th>
+          <th data-k="profit">Profit</th>
+          <th data-k="status">Status</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY = "iphone-flip-tracker-v1";
+const MODELS = ["iPhone 11","iPhone 11 Pro","iPhone 11 Pro Max","iPhone 12 mini","iPhone 12","iPhone 12 Pro","iPhone 12 Pro Max","iPhone 13 mini","iPhone 13","iPhone 13 Pro","iPhone 13 Pro Max","iPhone 14","iPhone 14 Plus","iPhone 14 Pro","iPhone 14 Pro Max","iPhone 15","iPhone 15 Plus","iPhone 15 Pro","iPhone 15 Pro Max","iPhone 16","iPhone 16 Plus","iPhone 16 Pro","iPhone 16 Pro Max","iPhone SE (2nd gen)","iPhone SE (3rd gen)","iPhone XR","iPhone XS","iPhone XS Max"];
+
+let items = [];
+try { items = JSON.parse(localStorage.getItem(KEY)) || []; } catch(e){ items = []; }
+let editId = null, sortKey = "date", sortDir = -1;
+
+const $ = id => document.getElementById(id);
+const eur = n => (n === null || n === undefined || isNaN(n)) ? "—" : "€" + Number(n).toLocaleString("en-IE",{minimumFractionDigits:0,maximumFractionDigits:2});
+const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(items)); }catch(e){} };
+
+$("models").innerHTML = MODELS.map(m => `<option value="${m}">`).join("");
+$("dateBought").valueAsDate = new Date();
+
+function daysBetween(a,b){
+  if(!a||!b) return null;
+  return Math.round((new Date(b)-new Date(a))/86400000);
+}
+function calc(i){
+  const sold = i.soldPrice !== null && i.soldPrice !== "" && i.soldPrice !== undefined && i.dateSold;
+  const days = sold ? daysBetween(i.dateBought, i.dateSold) : null;
+  const profit = sold ? (i.soldPrice - i.buyPrice - (i.extra||0)) : null;
+  return {sold:!!sold, days, profit};
+}
+
+function preview(){
+  const buy = parseFloat($("buyPrice").value), sp = parseFloat($("soldPrice").value), ex = parseFloat($("extra").value)||0;
+  const d = daysBetween($("dateBought").value, $("dateSold").value);
+  let t = "";
+  if(!isNaN(buy) && !isNaN(sp)){
+    const p = sp-buy-ex;
+    t += `Profit: <b class="${p>=0?'pos':'neg'}">${eur(p)}</b> (${(p/buy*100).toFixed(1)}% return)`;
+  }
+  if(d !== null) t += (t?" · ":"") + `Took <b>${d}</b> day${d===1?"":"s"} to sell`;
+  $("preview").innerHTML = t;
+}
+["buyPrice","soldPrice","extra","dateBought","dateSold"].forEach(id => $(id).addEventListener("input", preview));
+
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const num = id => $(id).value === "" ? null : parseFloat($(id).value);
+  const rec = {
+    id: editId || Date.now().toString(36),
+    model: $("model").value.trim(),
+    storage: $("storage").value,
+    condition: $("condition").value,
+    source: $("source").value.trim(),
+    dateBought: $("dateBought").value,
+    buyPrice: num("buyPrice"),
+    listPrice: num("listPrice"),
+    soldWhere: $("soldWhere").value.trim(),
+    dateSold: $("dateSold").value,
+    soldPrice: num("soldPrice"),
+    extra: num("extra") || 0
+  };
+  if(editId){ items = items.map(i => i.id===editId ? rec : i); }
+  else items.push(rec);
+  save(); resetForm(); render();
+});
+
+function resetForm(){
+  editId = null;
+  $("form").reset();
+  $("dateBought").valueAsDate = new Date();
+  $("extra").value = 0;
+  $("formTitle").textContent = "Add an iPhone";
+  $("saveBtn").textContent = "Save phone";
+  $("cancelBtn").style.display = "none";
+  $("preview").innerHTML = "";
+}
+$("cancelBtn").onclick = resetForm;
+
+function edit(id){
+  const i = items.find(x => x.id===id); if(!i) return;
+  editId = id;
+  $("model").value = i.model; $("storage").value = i.storage; $("condition").value = i.condition;
+  $("source").value = i.source; $("dateBought").value = i.dateBought;
+  $("buyPrice").value = i.buyPrice ?? ""; $("listPrice").value = i.listPrice ?? "";
+  $("soldWhere").value = i.soldWhere || ""; $("dateSold").value = i.dateSold || "";
+  $("soldPrice").value = i.soldPrice ?? ""; $("extra").value = i.extra ?? 0;
+  $("formTitle").textContent = "Edit iPhone";
+  $("saveBtn").textContent = "Update phone";
+  $("cancelBtn").style.display = "";
+  preview();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+function del(id){
+  if(!confirm("Delete this phone?")) return;
+  items = items.filter(i => i.id!==id); save(); render();
+}
+
+function render(){
+  const q = $("search").value.toLowerCase();
+  let rows = items.map(i => ({...i, ...calc(i)}))
+    .filter(i => (i.model+" "+i.source+" "+i.soldWhere).toLowerCase().includes(q));
+
+  rows.sort((a,b)=>{
+    let x, y;
+    if(sortKey==="status"){ x=a.sold?1:0; y=b.sold?1:0; }
+    else if(sortKey==="date"){ x=a.dateBought; y=b.dateBought; }
+    else { x=a[sortKey]; y=b[sortKey]; }
+    if(x==null) return 1; if(y==null) return -1;
+    return (x>y?1:x<y?-1:0)*sortDir;
+  });
+
+  $("tbody").innerHTML = rows.length ? rows.map(i => `
+    <tr>
+      <td><b>${esc(i.model)}</b><br><span style="color:var(--muted);font-size:.78rem">${esc(i.storage)} · ${esc(i.condition)}</span></td>
+      <td>${esc(i.source)}<br><span style="color:var(--muted);font-size:.78rem">${i.dateBought||""}</span></td>
+      <td>${eur(i.buyPrice)}${i.extra?`<br><span style="color:var(--muted);font-size:.78rem">+${eur(i.extra)} costs</span>`:""}</td>
+      <td>${eur(i.listPrice)}</td>
+      <td>${i.sold?eur(i.soldPrice):"—"}${i.soldWhere?`<br><span style="color:var(--muted);font-size:.78rem">${esc(i.soldWhere)}</span>`:""}</td>
+      <td>${i.days!==null?i.days+"d":"—"}</td>
+      <td class="${i.profit>=0?'pos':'neg'}">${i.profit!==null?eur(i.profit):"—"}</td>
+      <td><span class="tag ${i.sold?'sold':'stock'}">${i.sold?"Sold":"In stock"}</span></td>
+      <td><button class="sm sec" onclick="edit('${i.id}')">Edit</button> <button class="sm del" onclick="del('${i.id}')">✕</button></td>
+    </tr>`).join("") : `<tr><td colspan="9" class="empty">No phones yet. Add your first one above.</td></tr>`;
+
+  const all = items.map(i => ({...i, ...calc(i)}));
+  const soldList = all.filter(i => i.sold);
+  const profit = soldList.reduce((s,i)=>s+i.profit,0);
+  const spent = soldList.reduce((s,i)=>s+i.buyPrice+(i.extra||0),0);
+  const avgDays = soldList.length ? soldList.reduce((s,i)=>s+i.days,0)/soldList.length : null;
+  const inStockValue = all.filter(i=>!i.sold).reduce((s,i)=>s+i.buyPrice,0);
+
+  $("stats").innerHTML = [
+    ["Total profit", eur(profit), profit>=0?"pos":"neg"],
+    ["Phones sold", soldList.length, ""],
+    ["In stock", all.length-soldList.length, ""],
+    ["Avg days to sell", avgDays!==null?avgDays.toFixed(1)+"d":"—", ""],
+    ["Avg profit / phone", soldList.length?eur(profit/soldList.length):"—", ""],
+    ["Return on spend", spent?(profit/spent*100).toFixed(1)+"%":"—", ""],
+    ["Cash tied up", eur(inStockValue), ""]
+  ].map(([l,v,c]) => `<div class="stat"><div class="l">${l}</div><div class="v ${c}">${v}</div></div>`).join("");
+}
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => {
+  const k = th.dataset.k;
+  if(sortKey===k) sortDir*=-1; else { sortKey=k; sortDir=-1; }
+  render();
+});
+$("search").addEventListener("input", render);
+
+function download(name, text, type){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text],{type}));
+  a.download = name; a.click();
+}
+$("exportJson").onclick = () => download("iphone-flips-backup.json", JSON.stringify(items,null,2), "application/json");
+$("exportCsv").onclick = () => {
+  const head = ["Model","Storage","Condition","Bought from","Date bought","Paid","Extra costs","List price","Sold where","Date sold","Sold for","Days to sell","Profit"];
+  const lines = items.map(i => { const c = calc(i);
+    return [i.model,i.storage,i.condition,i.source,i.dateBought,i.buyPrice,i.extra,i.listPrice??"",i.soldWhere,i.dateSold,i.soldPrice??"",c.days??"",c.profit??""]
+      .map(v => `"${String(v??"").replace(/"/g,'""')}"`).join(",");
+  });
+  download("iphone-flips.csv", [head.join(","),...lines].join("\n"), "text/csv");
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = JSON.parse(r.result);
+      if(!Array.isArray(d)) throw 0;
+      if(confirm("Replace current data with the imported file?")){ items = d; save(); render(); }
+    }catch(err){ alert("That file doesn't look like a valid backup."); }
+  };
+  r.readAsText(f); e.target.value = "";
+};
+
+render();
+</script>
+</body>
+</html>

@@ -259,3 +259,180 @@ $("form").addEventListener("submit", e => {
 function resetForm(){
   editId = null;
   $("form").reset();
+  $("dateBought").valueAsDate = new Date();
+  $("extra").value = 0;
+  $("formTitle").textContent = "Add an iPhone";
+  $("saveBtn").textContent = "Save phone";
+  $("cancelBtn").style.display = "none";
+  $("preview").innerHTML = "";
+}
+$("cancelBtn").onclick = resetForm;
+
+function edit(id){
+  const i = items.find(x => x.id===id); if(!i) return;
+  editId = id;
+  $("model").value = i.model; $("storage").value = i.storage; $("condition").value = i.condition;
+  $("source").value = i.source; $("dateBought").value = i.dateBought;
+  $("buyPrice").value = i.buyPrice ?? ""; $("listPrice").value = i.listPrice ?? "";
+  $("soldWhere").value = i.soldWhere || ""; $("dateSold").value = i.dateSold || "";
+  $("soldPrice").value = i.soldPrice ?? ""; $("extra").value = i.extra ?? 0;
+  $("formTitle").textContent = "Edit iPhone";
+  $("saveBtn").textContent = "Update phone";
+  $("cancelBtn").style.display = "";
+  preview();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+function del(id){
+  if(!confirm("Delete this phone?")) return;
+  items = items.filter(i => i.id!==id); save(); render();
+}
+
+// ---- Expenses ----
+$("expForm").addEventListener("submit", e => {
+  e.preventDefault();
+  expenses.push({
+    id: Date.now().toString(36),
+    desc: $("expDesc").value.trim(),
+    cat: $("expCat").value.trim() || "Other",
+    date: $("expDate").value,
+    amount: parseFloat($("expAmt").value) || 0
+  });
+  saveExp();
+  $("expForm").reset();
+  $("expDate").valueAsDate = new Date();
+  render();
+});
+function delExp(id){
+  if(!confirm("Delete this expense?")) return;
+  expenses = expenses.filter(x => x.id!==id); saveExp(); render();
+}
+
+function render(){
+  const q = $("search").value.toLowerCase();
+  let rows = items.map(i => ({...i, ...calc(i)}))
+    .filter(i => (i.model+" "+i.source+" "+i.soldWhere).toLowerCase().includes(q));
+
+  rows.sort((a,b)=>{
+    let x, y;
+    if(sortKey==="status"){ x=a.sold?1:0; y=b.sold?1:0; }
+    else if(sortKey==="date"){ x=a.dateBought; y=b.dateBought; }
+    else { x=a[sortKey]; y=b[sortKey]; }
+    if(x==null) return 1; if(y==null) return -1;
+    return (x>y?1:x<y?-1:0)*sortDir;
+  });
+
+  $("tbody").innerHTML = rows.length ? rows.map(i => `
+    <tr>
+      <td><b>${esc(i.model)}</b><br><span style="color:var(--muted);font-size:.78rem">${esc(i.storage)} · ${esc(i.condition)}</span></td>
+      <td>${esc(i.source)}<br><span style="color:var(--muted);font-size:.78rem">${i.dateBought||""}</span></td>
+      <td>${eur(i.buyPrice)}${i.extra?`<br><span style="color:var(--muted);font-size:.78rem">+${eur(i.extra)} costs</span>`:""}</td>
+      <td>${eur(i.listPrice)}</td>
+      <td>${i.sold?eur(i.soldPrice):"—"}${i.soldWhere?`<br><span style="color:var(--muted);font-size:.78rem">${esc(i.soldWhere)}</span>`:""}</td>
+      <td>${i.days!==null?i.days+"d":"—"}</td>
+      <td class="${i.profit>=0?'pos':'neg'}">${i.profit!==null?eur(i.profit):"—"}</td>
+      <td><span class="tag ${i.sold?'sold':'stock'}">${i.sold?"Sold":"In stock"}</span></td>
+      <td><button class="sm sec" onclick="edit('${i.id}')">Edit</button> <button class="sm del" onclick="del('${i.id}')">✕</button></td>
+    </tr>`).join("") : `<tr><td colspan="9" class="empty">No phones yet. Add your first one above.</td></tr>`;
+
+  // Expenses table
+  const expSorted = [...expenses].sort((a,b)=> (a.date<b.date?1:a.date>b.date?-1:0));
+  $("expBody").innerHTML = expSorted.length ? expSorted.map(x => `
+    <tr>
+      <td>${esc(x.date)}</td>
+      <td>${esc(x.desc)}</td>
+      <td><span class="tag cat">${esc(x.cat)}</span></td>
+      <td class="neg">${eur(x.amount)}</td>
+      <td><button class="sm del" onclick="delExp('${x.id}')">✕</button></td>
+    </tr>`).join("") : `<tr><td colspan="5" class="empty">No expenses logged yet.</td></tr>`;
+
+  const byCat = {};
+  expenses.forEach(x => { byCat[x.cat] = (byCat[x.cat]||0) + x.amount; });
+  $("expCatTotals").innerHTML = Object.entries(byCat).sort((a,b)=>b[1]-a[1])
+    .map(([c,v]) => `<span>${esc(c)}: <b>${eur(v)}</b></span>`).join("");
+
+  // Stats
+  const all = items.map(i => ({...i, ...calc(i)}));
+  const soldList = all.filter(i => i.sold);
+  const profit = soldList.reduce((s,i)=>s+i.profit,0);
+  const spent = soldList.reduce((s,i)=>s+i.buyPrice+(i.extra||0),0);
+  const avgDays = soldList.length ? soldList.reduce((s,i)=>s+i.days,0)/soldList.length : null;
+  const inStockValue = all.filter(i=>!i.sold).reduce((s,i)=>s+i.buyPrice,0);
+  const totalExpenses = expenses.reduce((s,x)=>s+x.amount,0);
+  const netProfit = profit - totalExpenses;
+
+  // Cash on hand = starting cash + money received from sales - phones bought - per-phone extras - general expenses
+  const received = soldList.reduce((s,i)=>s+i.soldPrice,0);
+  const totalOut = all.reduce((s,i)=>s+(i.buyPrice||0)+(i.extra||0),0);
+  const cash = startCash + received - totalOut - totalExpenses;
+
+  $("cashStat").innerHTML = `<div class="stat cash"><div class="l">Cash on hand</div><div class="v ${cash>=0?'pos':'neg'}">${eur(cash)}</div></div>`;
+
+  $("stats").innerHTML = [
+    ["Net profit", eur(netProfit), netProfit>=0?"pos":"neg"],
+    ["Phone profit", eur(profit), profit>=0?"pos":"neg"],
+    ["Total expenses", eur(totalExpenses), totalExpenses>0?"neg":""],
+    ["Phones sold", soldList.length, ""],
+    ["In stock", all.length-soldList.length, ""],
+    ["Avg days to sell", avgDays!==null?avgDays.toFixed(1)+"d":"—", ""],
+    ["Avg profit / phone", soldList.length?eur(profit/soldList.length):"—", ""],
+    ["Return on spend", spent?(profit/spent*100).toFixed(1)+"%":"—", ""],
+    ["Cash tied up", eur(inStockValue), ""]
+  ].map(([l,v,c]) => `<div class="stat"><div class="l">${l}</div><div class="v ${c}">${v}</div></div>`).join("");
+}
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => {
+  const k = th.dataset.k;
+  if(sortKey===k) sortDir*=-1; else { sortKey=k; sortDir=-1; }
+  render();
+});
+$("search").addEventListener("input", render);
+
+function download(name, text, type){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text],{type}));
+  a.download = name; a.click();
+}
+$("exportJson").onclick = () => download("iphone-flips-backup.json", JSON.stringify({startCash, items, expenses},null,2), "application/json");
+$("exportCsv").onclick = () => {
+  const head = ["Model","Storage","Condition","Bought from","Date bought","Paid","Extra costs","List price","Sold where","Date sold","Sold for","Days to sell","Profit"];
+  const lines = items.map(i => { const c = calc(i);
+    return [i.model,i.storage,i.condition,i.source,i.dateBought,i.buyPrice,i.extra,i.listPrice??"",i.soldWhere,i.dateSold,i.soldPrice??"",c.days??"",c.profit??""]
+      .map(v => `"${String(v??"").replace(/"/g,'""')}"`).join(",");
+  });
+  download("iphone-flips.csv", [head.join(","),...lines].join("\n"), "text/csv");
+  const eh = ["Date","Description","Category","Amount"];
+  const el = expenses.map(x => [x.date,x.desc,x.cat,x.amount].map(v => `"${String(v??"").replace(/"/g,'""')}"`).join(","));
+  setTimeout(() => download("iphone-expenses.csv", [eh.join(","),...el].join("\n"), "text/csv"), 300);
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = JSON.parse(r.result);
+      // supports newest backups ({startCash, items, expenses}), older ({startCash, items}) and oldest (plain array)
+      const list = Array.isArray(d) ? d : d.items;
+      if(!Array.isArray(list)) throw 0;
+      if(confirm("Replace current data with the imported file?")){
+        items = list;
+        if(!Array.isArray(d)){
+          if(d.startCash !== undefined){
+            startCash = parseFloat(d.startCash) || 0;
+            $("startCash").value = startCash || "";
+            try{ localStorage.setItem(CASH_KEY, String(startCash)); }catch(e){}
+          }
+          if(Array.isArray(d.expenses)){ expenses = d.expenses; saveExp(); }
+        }
+        save(); render();
+      }
+    }catch(err){ alert("That file doesn't look like a valid backup."); }
+  };
+  r.readAsText(f); e.target.value = "";
+};
+
+render();
+</script>
+</body>
+</html>
